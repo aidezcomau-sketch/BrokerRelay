@@ -28,6 +28,19 @@ button,.button,input,select,textarea{font-family:inherit}
 .center .card .brokerRelayBrand,.page>.card .brokerRelayBrand{margin-bottom:8px}
 @media(max-width:620px){.platformDetailsHeading h1,.center .card h1,.page>.card h1{font-size:24px}.platformDetailsPage .platformDetailsGrid .card{padding:18px}}
 
+/* BrokerDesk client navigation: themed, accessible and mobile-friendly. */
+.brokerDeskClientActions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+.brokerDeskClientActions .brokerDeskClientAction{
+  display:inline-flex;align-items:center;justify-content:center;
+  padding:9px 13px;border:1px solid currentColor;border-radius:9px;
+  color:var(--broker-company-link,#1d4ed8);background:#fff;
+  font-size:13px;font-weight:700;line-height:1.3;text-decoration:none;
+  transition:background-color .15s ease,box-shadow .15s ease;
+}
+.brokerDeskClientActions .brokerDeskClientAction:hover{background:#f2f6ff;text-decoration:underline}
+.brokerDeskClientActions .brokerDeskClientAction:focus-visible{outline:3px solid #93b4fc;outline-offset:2px}
+@media(max-width:620px){.brokerDeskClientActions{width:100%}.brokerDeskClientActions .brokerDeskClientAction{flex:1 1 180px;text-align:center}}
+
 /* Keep the dashboard banner legible after the common heading colour is applied. */
 .brokerDeskMain .hero h1{color:#fff}
 .brokerDeskMain .hero .eyebrow{color:#dbeafe;opacity:1}
