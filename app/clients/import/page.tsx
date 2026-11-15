@@ -4,9 +4,18 @@ import {useEffect,useState} from 'react'
 import Link from 'next/link'
 import {supabase} from '@/lib/supabase'
 
-type ClientRow = {first_name:string;last_name:string;email:string;mobile:string}
-type ImportSummary = {received:number;created:number;duplicates:number;invalid:number;billing_events_created:number}
+type ClientRow = {first_name:string;last_name:string;email:string;mobile:string;birthday:string}
+type ImportSummary = {received:number;created:number;duplicates:number;invalid:number;billing_events_created:number;birthdays_saved?:number}
 const required = ['first_name','last_name','email','mobile'] as const
+const headers = [...required, 'birthday'] as const
+function validBirthday(value:string):boolean {
+  if(!value)return true
+  if(!/^\d{2}\/\d{2}\/\d{4}$/.test(value))return false
+  const [day,month,year]=value.split('/').map(Number)
+  if(year<1850 || year>new Date().getFullYear())return false
+  const date=new Date(Date.UTC(year,month-1,day))
+  return date.getUTCFullYear()===year && date.getUTCMonth()===month-1 && date.getUTCDate()===day && date.getTime()<=Date.now()
+}
 
 // RFC4180-style quoted fields, commas and embedded newlines; rejects unclosed quotes.
 function csvRows(text:string):string[][] {
@@ -35,12 +44,16 @@ function parse(text:string):ClientRow[] {
   if(rows.length<2)throw Error('The file requires a header and at least one client')
   const header=rows[0].map(s=>s.trim().toLowerCase().replace(/\s+/g,'_'))
   const indexes=required.map(k=>header.indexOf(k))
-  if(indexes.some(i=>i<0))throw Error('CSV headers must be: first_name,last_name,email,mobile')
+  if(indexes.some(i=>i<0))throw Error('Required CSV headers: first_name,last_name,email,mobile (birthday is optional)')
+  const birthdayIndex=header.indexOf('birthday')
   if(new Set(header).size!==header.length)throw Error('Duplicate CSV column header')
   if(rows.length-1>500)throw Error('Maximum 500 clients per upload')
   return rows.slice(1).map((r,i)=>{
     if(r.length!==header.length)throw Error(`Row ${i+2} has the wrong number of columns`)
-    return Object.fromEntries(required.map((k,j)=>[k,r[indexes[j]].trim()])) as ClientRow
+    const client=Object.fromEntries(required.map((k,j)=>[k,r[indexes[j]].trim()])) as ClientRow
+    client.birthday=birthdayIndex>=0?r[birthdayIndex].trim():''
+    if(!validBirthday(client.birthday))throw Error(`Row ${i+2}: birthday must be a real past date in DD/MM/YYYY format (or blank)`)
+    return client
   })
 }
 export default function HistoricalImportPage(){
@@ -95,17 +108,17 @@ export default function HistoricalImportPage(){
   <section className="card">
    <h1>Import existing clients</h1>
    <p>For historical clients without application details. This import creates client records and broker assignments only; it does not create loans or settlement billing events.</p>
-   <p>Required CSV columns: <code>first_name,last_name,email,mobile</code>. Maximum 500 rows per file.</p>
+   <p>Required columns: <code>first_name,last_name,email,mobile</code>. Optional column: <code>birthday</code> (DD/MM/YYYY). Only birthday month/day are stored; birthday messages remain disabled until consent is recorded. Maximum 500 rows per file.</p>
    <button type="button" className="secondary" onClick={()=>void getCompanies()}>Load my companies</button>
    {companies.length>1&&<label>Company <select value={organisationId} onChange={e=>setOrganisationId(e.target.value)}><option value="">Select company</option>{companies.map(c=><option key={c.organisation_id} value={c.organisation_id}>{c.organisation_id}</option>)}</select></label>}
    <label>Choose CSV<input type="file" accept=".csv,text/csv" onChange={e=>void load(e.target.files?.[0])}/></label>
    {clients.length>0&&<><h2>Review {clients.length} clients from {name}</h2>
-     <div className="tableWrap"><table><thead><tr>{required.map(h=><th key={h}>{h.replace('_',' ')}</th>)}</tr></thead><tbody>{clients.slice(0,10).map((c,i)=><tr key={i}><td>{c.first_name}</td><td>{c.last_name}</td><td>{c.email}</td><td>{c.mobile}</td></tr>)}</tbody></table></div>
+     <div className="tableWrap"><table><thead><tr>{headers.map(h=><th key={h}>{h.replace('_',' ')}</th>)}</tr></thead><tbody>{clients.slice(0,10).map((c,i)=><tr key={i}><td>{c.first_name}</td><td>{c.last_name}</td><td>{c.email}</td><td>{c.mobile}</td><td>{c.birthday||'—'}</td></tr>)}</tbody></table></div>
      {clients.length>10&&<p>Showing first 10 of {clients.length} rows.</p>}
      <button disabled={busy||!organisationId} onClick={()=>void upload()}>{busy?'Importing…':`Import ${clients.length} historical clients`}</button>
    </>}
    {error&&<p role="alert" className="notice error">{error}</p>}
-   {result&&<p role="status" className="notice">Import complete: {result.created} created; {result.duplicates} existing/duplicate; {result.invalid} invalid; {result.billing_events_created} billing events.</p>}
+   {result&&<p role="status" className="notice">Import complete: {result.created} created; {result.duplicates} existing/duplicate; {result.invalid} invalid; {result.birthdays_saved??0} birthdays saved; {result.billing_events_created} billing events.</p>}
   </section>
  </main>
 }
