@@ -6,7 +6,7 @@ import { workspaceDestination } from '@/lib/workspace-destination'
 
 import { ClientGreetingPreferences } from '@/components/ClientGreetingPreferences'
 import Link from 'next/link'
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useState, type CSSProperties } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { supabase } from '@/lib/supabase'
 import { CompanyPerformance } from '@/components/CompanyPerformance'
@@ -23,6 +23,16 @@ type BrokerContext = {
   brokerTitle: string
   firstName: string
   lastName: string
+  companyLinkColor: string
+}
+
+// Reuse the company's configured button colour only when readable on white.
+function accessibleCompanyLinkColor(value: string | null | undefined): string {
+  if (!value || !/^#[0-9a-fA-F]{6}$/.test(value)) return '#1d4ed8'
+  const channels = [1, 3, 5].map(i => parseInt(value.slice(i, i + 2), 16) / 255)
+    .map(n => n <= 0.04045 ? n / 12.92 : ((n + 0.055) / 1.055) ** 2.4)
+  const luminance = channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
+  return 1.05 / (luminance + 0.05) >= 4.5 ? value : '#1d4ed8'
 }
 
 type ClientRow = {
@@ -33,6 +43,7 @@ type ClientRow = {
   mobile: string | null
   status: string
   connected_at: string | null
+  created_at: string
 }
 
 type SecurityAction = {
@@ -135,7 +146,7 @@ export default function DashboardPage() {
     }
 
     const [{ data: org }, { data: profile }] = await Promise.all([
-      supabase.from('organisations').select('name,logo_url,logo_display_width,logo_display_height').eq('id', broker.organisation_id).single(),
+      supabase.from('organisations').select('name,logo_url,logo_display_width,logo_display_height,mobile_button_color').eq('id', broker.organisation_id).single(),
       supabase.from('profiles').select('first_name,last_name').eq('id', user.id).single(),
     ])
 
@@ -149,14 +160,14 @@ export default function DashboardPage() {
       brokerTitle: broker.title,
       firstName: profile?.first_name ?? '',
       lastName: profile?.last_name ?? '',
+      companyLinkColor: accessibleCompanyLinkColor(org?.mobile_button_color),
     })
 
     const { data: clientData, error: clientsError } = await supabase
       .from('clients')
-      .select('id,first_name,last_name,email,mobile,status,connected_at')
+      .select('id,first_name,last_name,email,mobile,status,connected_at,created_at')
       .eq('organisation_id', broker.organisation_id)
-      .not('connected_at', 'is', null)
-      .order('connected_at', { ascending: false })
+      .order('created_at', { ascending: false })
 
     if (clientsError) setMessage(clientsError.message)
     setClients((clientData ?? []) as ClientRow[])
@@ -216,9 +227,10 @@ export default function DashboardPage() {
   const visibleClients = clients.filter(c => !search || [c.first_name, c.last_name,
     `${c.first_name} ${c.last_name}`, c.email, c.mobile].some(value => value?.toLocaleLowerCase().includes(search)))
   const unreadTotal = Object.values(unread).reduce((total, count) => total + count, 0)
+  const connectedCount = clients.filter(c => Boolean(c.connected_at)).length
 
   return (
-    <main className="brokerDeskShell" id="home">
+    <main className="brokerDeskShell" id="home" style={{'--broker-company-link': context?.companyLinkColor ?? '#1d4ed8'} as CSSProperties}>
       <header className="brokerDeskHeader">
         <BrokerRelayBrand compact />
         <div className="brokerDeskAccount">
@@ -287,7 +299,7 @@ export default function DashboardPage() {
       )}
 
       <div className="brokerDeskOverview" aria-label="Workspace overview">
-        <a href="/clients" className="brokerDeskMetric"><span>♙</span><strong>{clients.length}</strong><small>Connected clients</small></a>
+        <a href="/clients" className="brokerDeskMetric"><span>♙</span><strong>{connectedCount}</strong><small>Connected clients</small></a>
         <a href="/messages" className="brokerDeskMetric"><span>✉</span><strong>{unreadTotal}</strong><small>Unread messages</small></a>
         <Link href="/announcements" className="brokerDeskMetric"><span>◈</span><strong>Announcements</strong><small>Send a client update →</small></Link>
       </div>
@@ -299,7 +311,11 @@ export default function DashboardPage() {
         <div className="sectionHead">
           <div>
             <p className="eyebrow">CLIENTS</p>
-            <h2>Recent connected clients</h2><Link href="/clients">View all clients →</Link>
+            <h2>Recent clients</h2>
+            <div className="brokerDeskClientActions">
+              <Link className="brokerDeskClientAction" href="/clients">View all clients</Link>
+              <Link className="brokerDeskClientAction" href="/clients/import">Import existing clients (CSV)</Link>
+            </div>
           </div>
           <span className="pill">{clients.length}</span>
         </div>
@@ -316,7 +332,7 @@ export default function DashboardPage() {
                 {visibleClients.slice(0,5).map(c => (
                   <Fragment key={c.id}>
                   <tr>
-                    <td><button className="brokerDeskClientToggle" type="button" aria-expanded={expandedClientId === c.id} onClick={() => setExpandedClientId(current => current === c.id ? null : c.id)}>{c.first_name} {c.last_name} <span aria-hidden="true">{expandedClientId === c.id ? '⌃' : '⌄'}</span></button><small>Connected {c.connected_at ? new Date(c.connected_at).toLocaleDateString('en-AU') : '—'}</small></td>
+                    <td><button className="brokerDeskClientToggle" type="button" aria-expanded={expandedClientId === c.id} onClick={() => setExpandedClientId(current => current === c.id ? null : c.id)}>{c.first_name} {c.last_name} <span aria-hidden="true">{expandedClientId === c.id ? '⌃' : '⌄'}</span></button><small>{c.connected_at ? 'Connected '+new Date(c.connected_at).toLocaleDateString('en-AU') : 'Awaiting activation'}</small></td>
                     <td>{c.email ?? '—'}<small>{c.mobile ?? ''}</small></td>
                     <td><span className="pill">{c.status}</span></td>
                     <td>
